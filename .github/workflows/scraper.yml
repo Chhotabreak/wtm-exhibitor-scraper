@@ -1,35 +1,66 @@
-name: Run WTM Exhibitor Scraper
+name: Run WTM Exhibitor Scraper (debug)
 
 on:
-  schedule:
-    - cron: "0 3 * * *"  # Runs daily at 3:00 AM UTC (~8:30 AM IST)
-  workflow_dispatch:      # Allows manual run from GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   run-scraper:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Debug - show repo files
+        run: |
+          echo "=== Repo root ==="
+          pwd
+          ls -lah
+          echo "=== .github ==="
+          ls -lah .github || true
+          echo "=== workflow file ==="
+          sed -n '1,120p' .github/workflows/scraper.yml || true
+
+      - name: Install google-chrome
+        run: |
+          sudo apt update -y
+          sudo apt install -y wget gnupg --no-install-recommends
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt update -y
+          sudo apt install -y google-chrome-stable
+          google-chrome --version
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run scraper
-        run: python wtm_scraper.py
-
-      - name: Commit and push updated file
+      - name: Install pip deps (show output)
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Auto update exhibitor list"
-          git push
+          python -m pip install --upgrade pip
+          pip --version
+          if [ -f requirements.txt ]; then cat requirements.txt; pip install -r requirements.txt; else echo "No requirements.txt found!"; fi
+
+      - name: Show Python & Chrome + env
+        run: |
+          python -V
+          which python
+          echo "CHROME:" && google-chrome --version || true
+          echo "ENV vars (selected):"
+          env | egrep '^(GITHUB_|PATH|PYTHON|HOME)' || true
+
+      - name: Show first lines of scraper script (if present)
+        run: |
+          if [ -f wtm_scraper.py ]; then echo "---- wtm_scraper.py ----"; sed -n '1,200p' wtm_scraper.py; else echo "wtm_scraper.py not found in repo root."; fi
+
+      - name: Run scraper (unbuffered, show full logs)
+        run: |
+          set -x
+          python -u wtm_scraper.py
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONUNBUFFERED: 1
+
+      - name: Show data directory (post-run)
+        run: |
+          echo "=== data dir ==="
+          ls -lah data || true
